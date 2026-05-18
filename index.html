@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kalshi / Polymarket Arb Scanner</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f4; --bg3: #eeece9;
+    --text: #1a1a18; --text2: #5c5b58; --text3: #9b9a96;
+    --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+    --green-bg: #eaf3de; --green-text: #3b6d11;
+    --blue-bg: #e6f1fb; --blue-text: #185fa5;
+    --radius: 8px; --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #e8e6e0; --text2: #a8a7a2; --text3: #6b6a66;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.18);
+      --green-bg: #173404; --green-text: #c0dd97;
+      --blue-bg: #042c53; --blue-text: #b5d4f4;
+    }
+  }
+
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+  .page { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem; }
+
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .meta { font-size: 12px; color: var(--text3); margin-bottom: 1.5rem; }
+
+  /* summary card */
+  .summary-card { background: var(--blue-bg); color: var(--blue-text);
+                  border-radius: var(--radius-lg); padding: 1rem 1.25rem;
+                  margin-bottom: 1.5rem; font-size: 13px; }
+  .summary-card h2 { font-size: 14px; font-weight: 600; margin-bottom: 0.5rem; }
+  .summary-row { display: flex; justify-content: space-between; gap: 8px;
+                 padding: 4px 0; border-bottom: 0.5px solid rgba(0,0,0,0.08); }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .irr { font-weight: 600; }
+
+  /* tabs */
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.25rem; }
+  .tab { font-size: 12px; padding: 5px 12px; border: 0.5px solid var(--border2);
+         border-radius: 20px; cursor: pointer; background: var(--bg);
+         color: var(--text2); transition: background 0.15s; }
+  .tab.active { background: var(--bg3); color: var(--text); font-weight: 500; }
+
+  /* section */
+  .sport-section { display: none; }
+  .sport-section.active { display: block; }
+
+  .dir-header { display: flex; align-items: baseline; gap: 10px;
+                margin: 1.25rem 0 0.5rem; flex-wrap: wrap; }
+  .dir-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .dir-subtitle { font-size: 12px; color: var(--text3); }
+  .arb-badge { background: var(--green-bg); color: var(--green-text);
+               border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+
+  /* table */
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+  th { text-align: right; padding: 6px 10px; color: var(--text3); font-weight: 500;
+       border-bottom: 0.5px solid var(--border); }
+  th:first-child { text-align: left; }
+  td { text-align: right; padding: 5px 10px; border-bottom: 0.5px solid var(--border); }
+  td:first-child { text-align: left; color: var(--text); }
+  td.num { color: var(--text2); font-variant-numeric: tabular-nums; }
+  td.dash { color: var(--text3); }
+  tr.arb td { background: var(--green-bg); color: var(--green-text); font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+
+  .irr-pos { color: var(--green-text); font-weight: 600; }
+  .irr-neg { color: var(--text2); }
+
+  /* toggle */
+  .controls { display: flex; align-items: center; gap: 14px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .toggle { display: flex; align-items: center; gap: 6px; font-size: 13px;
+            color: var(--text2); cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--blue-text); }
+
+  /* loading / error */
+  .state { padding: 2rem; text-align: center; color: var(--text3); font-size: 14px; }
+  .error { color: #a32d2d; }
+
+  /* refresh btn */
+  .btn-refresh { font-size: 12px; padding: 5px 12px; border: 0.5px solid var(--border2);
+                 border-radius: var(--radius); cursor: pointer; background: var(--bg);
+                 color: var(--text2); }
+  .btn-refresh:hover { background: var(--bg2); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Kalshi / Polymarket Arb Scanner</h1>
+  <div class="meta" id="meta">Loading...</div>
+
+  <div class="controls">
+    <label class="toggle"><input type="checkbox" id="arbOnly"> Show arb rows only</label>
+    <button class="btn-refresh" onclick="load()">Refresh</button>
+  </div>
+
+  <div id="summaryBox"></div>
+  <div class="tabs" id="tabs"></div>
+  <div id="sections"></div>
+</div>
+
+<script>
+let allData = null;
+
+function fmt(v, dec) {
+  if (v == null) return null;
+  return '$' + v.toFixed(dec ?? 4);
+}
+function fmtPct(v) {
+  if (v == null) return null;
+  const p = (v * 100).toFixed(2);
+  return v >= 0 ? '+' + p + '%' : '(' + Math.abs(p).toFixed(2) + '%)';
+}
+
+function buildTable(rows, direction, arbOnly) {
+  if (arbOnly) rows = rows.filter(r => r.arb);
+  if (!rows.length) return '<p style="font-size:12px;color:var(--text3);padding:8px 0">No rows to display.</p>';
+
+  const pmCol  = direction === 'A' ? 'PM Yes' : 'PM No';
+  const kalCol = direction === 'A' ? 'KAL No' : 'KAL Yes';
+
+  let h = `<div class="tbl-wrap"><table>
+    <thead><tr>
+      <th>Name</th>
+      <th>${pmCol}</th><th>PM Fee</th><th>PM Total</th>
+      <th>${kalCol}</th><th>KAL Fee</th><th>KAL Total</th>
+      <th>Combined</th><th>Arb</th><th>Ann. IRR</th>
+    </tr></thead><tbody>`;
+
+  for (const r of rows) {
+    const cls = r.arb ? ' class="arb"' : '';
+    const irrVal = fmtPct(r.return);
+    const irrCls = r.return == null ? 'dash' : (r.return >= 0 ? 'irr-pos' : 'irr-neg');
+    h += `<tr${cls}>
+      <td>${r.name}</td>
+      <td class="${r.pm_ask == null ? 'dash' : 'num'}">${fmt(r.pm_ask) ?? '—'}</td>
+      <td class="${r.pm_fee == null ? 'dash' : 'num'}">${fmt(r.pm_fee) ?? '—'}</td>
+      <td class="${r.pm_total == null ? 'dash' : 'num'}">${fmt(r.pm_total, 2) ?? '—'}</td>
+      <td class="${r.kal_ask == null ? 'dash' : 'num'}">${fmt(r.kal_ask) ?? '—'}</td>
+      <td class="${r.kal_fee == null ? 'dash' : 'num'}">${fmt(r.kal_fee) ?? '—'}</td>
+      <td class="${r.kal_total == null ? 'dash' : 'num'}">${fmt(r.kal_total, 2) ?? '—'}</td>
+      <td class="${r.combined == null ? 'dash' : 'num'}">${fmt(r.combined, 2) ?? '—'}</td>
+      <td style="text-align:center">${r.arb ? '<span class="arb-badge">✓</span>' : ''}</td>
+      <td class="${irrCls}">${irrVal ?? '—'}</td>
+    </tr>`;
+  }
+  h += '</tbody></table></div>';
+  return h;
+}
+
+function render() {
+  if (!allData) return;
+  const arbOnly = document.getElementById('arbOnly').checked;
+
+  // summary
+  const allArbs = [];
+  for (const s of allData.sports) {
+    for (const [dir, rows] of Object.entries(s.tables)) {
+      for (const r of rows) {
+        if (r.arb) allArbs.push({ market: s.label, dir, ...r });
+      }
+    }
+  }
+  allArbs.sort((a, b) => (b.return ?? -9999) - (a.return ?? -9999));
+
+  let sumHtml = '';
+  if (allArbs.length) {
+    sumHtml = `<div class="summary-card">
+      <h2>⚡ ${allArbs.length} arb opportunit${allArbs.length === 1 ? 'y' : 'ies'} found</h2>`;
+    for (const r of allArbs) {
+      const dir = r.dir === 'A' ? 'PM Yes + KAL No' : 'PM No + KAL Yes';
+      sumHtml += `<div class="summary-row">
+        <span>${r.market} — ${r.name} <span style="font-size:11px;opacity:.7">(${dir})</span></span>
+        <span class="irr">${fmtPct(r.return)}</span>
+      </div>`;
+    }
+    sumHtml += '</div>';
+  }
+  document.getElementById('summaryBox').innerHTML = sumHtml;
+
+  // tabs
+  const tabsEl = document.getElementById('tabs');
+  const sectEl = document.getElementById('sections');
+  const activeIdx = parseInt(tabsEl.dataset.active ?? '0');
+
+  tabsEl.innerHTML = allData.sports.map((s, i) => {
+    const hasArb = s.tables.A.some(r => r.arb) || s.tables.B.some(r => r.arb);
+    return `<div class="tab${i === activeIdx ? ' active' : ''}" onclick="switchTab(${i})">${s.label}${hasArb ? ' ⚡' : ''}</div>`;
+  }).join('');
+
+  sectEl.innerHTML = allData.sports.map((s, i) => {
+    let html = `<div class="sport-section${i === activeIdx ? ' active' : ''}">`;
+    for (const [dir, rows] of Object.entries(s.tables)) {
+      const arbCount = rows.filter(r => r.arb).length;
+      const dirLabel = dir === 'A'
+        ? 'Table A — PM Yes + KAL No'
+        : 'Table B — PM No + KAL Yes';
+      const sub = dir === 'A'
+        ? 'buy wins on Polymarket, losses on Kalshi'
+        : 'buy losses on Polymarket, wins on Kalshi';
+      html += `<div class="dir-header">
+        <span class="dir-title">${dirLabel}</span>
+        <span class="dir-subtitle">${sub}</span>
+        ${arbCount ? `<span class="arb-badge">⚡ ${arbCount} arb${arbCount > 1 ? 's' : ''}</span>` : ''}
+      </div>`;
+      html += buildTable(rows, dir, arbOnly);
+    }
+    html += '</div>';
+    return html;
+  }).join('');
+}
+
+function switchTab(i) {
+  document.getElementById('tabs').dataset.active = i;
+  render();
+}
+
+async function load() {
+  document.getElementById('meta').textContent = 'Loading...';
+  try {
+    const r = await fetch('data.json?t=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    allData = await r.json();
+    document.getElementById('meta').textContent =
+      `Last updated: ${allData.generated_at}  ·  Contracts: ${allData.contracts}  ·  Arb = combined < $100.00`;
+    render();
+  } catch (e) {
+    document.getElementById('meta').textContent = '';
+    document.getElementById('sections').innerHTML =
+      `<div class="state error">Could not load data.json — ${e.message}<br>
+      <small>The workflow may not have run yet. Check the Actions tab in GitHub.</small></div>`;
+  }
+}
+
+document.getElementById('arbOnly').addEventListener('change', render);
+load();
+</script>
+</body>
+</html>
